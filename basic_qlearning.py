@@ -4,6 +4,7 @@ import torch
 import torch.nn.functional as F
 from collections import OrderedDict, defaultdict
 from env import RoboTaxiEnv, Action, CellType, Direction, Int2Direction, Direction2Int
+from torch.utils.tensorboard import SummaryWriter
 
 
 class QModel(torch.nn.Module):
@@ -92,6 +93,9 @@ def processObs(obs, info):
 if __name__ == '__main__':
     # http://rail.eecs.berkeley.edu/deeprlcourse-fa17/f17docs/lecture_7_advanced_q_learning.pdf Double Q-learning?
 
+    # Logging Setup
+    writer = SummaryWriter()
+
     # Initial Setup
     config = {}
     with open('config.json') as config_file:
@@ -102,18 +106,22 @@ if __name__ == '__main__':
     loss_fn = torch.nn.MSELoss()
 
     # Training Loop
-    NUM_TS = 500*1000
+    NUM_TS = 500*10000
     EPSILON = 1e-1
     GAMMA = 0.99
     N_ACTIONS = 5
 
     episode_over = True
     episode_rews = []
+    eps_num = 0
     for ts in range(NUM_TS):
 
         # Reset if needed
         if episode_over:
-            print(f"ts: {ts} / {NUM_TS} \t|\t Episode Rew: {np.sum(np.array(episode_rews))}")
+            eps_sum = np.sum(np.array(episode_rews))
+            writer.add_scalar('Reward/Episode_Rew', eps_sum, eps_num)
+            eps_num += 1
+            print(f"ts: {ts} / {NUM_TS} \t|\t Episode Rew: {eps_sum}")
             episode_rews = []
             obs, info = env.reset()
 
@@ -137,6 +145,7 @@ if __name__ == '__main__':
         # Learn 1 step
         bootstrap_target = rew + GAMMA * torch.max(qModel.getQvals(state_vec=new_state_vec))
         loss = loss_fn(q_vals[action], bootstrap_target.detach())
+        writer.add_scalar('Loss/loss', loss.item(), ts)
         optim.zero_grad()
         loss.backward()
         optim.step()
