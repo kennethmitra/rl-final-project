@@ -40,14 +40,14 @@
   "actual": {
     "gameConfig": {
       "map_size": [12, 12],
-      "max_steps": 100,
+      "max_steps": 500,
       "num_bombs": 3,
       "initial_avoidance_dist": 3,
       "rewards": {
         "bomb":-10,
-        "acorn":5,
-        "delivered":10,
-        "ts": -1,
+        "acorn":10,
+        "delivered":20,
+        "ts": -0.01,
         "wall":0,
         "max_steps_exceeded": 0
       },
