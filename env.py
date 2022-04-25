@@ -301,8 +301,40 @@ class RoboTaxiEnv(gym.Env):
 
         else:  # Load preset map
             self.map = np.asarray(self.preset_map)
-            self.player_orientation = Direction(tuple(self.preset_player_orientation))
-            self.player_loc = tuple(self.preset_player_location)
+ 
+
+            # Rerandomize player start
+            if self.rerandomize_player_start:
+                rerandomizer_seed = time.time()
+                rereandomizer_random = Random(rerandomizer_seed)
+
+                # First, list all open spaces, find bombs
+                open_locs = set()
+                bombs_rc = []
+                for r in range(self.map.shape[0]):
+                    for c in range(self.map.shape[1]):
+                        if self.map[r, c] == CellType.BLANK.value:
+                            open_locs.add((r, c))
+                        elif self.map[r, c] == CellType.BOMB.value:
+                            bombs_rc.append((r, c))
+
+                # Choose player direction
+                self.player_orientation = rereandomizer_random.choice([orient for orient in Direction])
+
+                # Mask out areas from bomb, wall
+                for bomb in bombs_rc:
+                    for step in range(1, self.initial_avoidance_dist + 1):
+                        # Looking back from bomb to player
+                        open_locs.discard((bomb[0] - (self.player_orientation.value[1] * step),
+                                           bomb[1] - (self.player_orientation.value[0] * step)))
+
+                # Choose player location
+                self.player_loc = rereandomizer_random.choice(list(open_locs))[::-1]
+                
+            else:
+                self.player_loc = tuple(self.preset_player_location)
+                self.player_orientation = Direction(tuple(self.preset_player_orientation))
+            
 
         # obs, info
         return (self.map.copy(), self.player_loc, self.has_acorn), dict(map=self.map.copy(),
