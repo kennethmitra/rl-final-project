@@ -33,7 +33,16 @@ def epsilon_greedy_action(weights, state, epsilon):
 		for action in range(1, 5):
 			Q_value[action-1] = Q(weights, state, action)
 		best_action = np.random.choice(np.flatnonzero(Q_value == Q_value.max()))+1
-
+		return best_action
+	
+def epsilon_greedy_action_with_H(weights, state, human_reward_weight, epsilon):
+	if (np.random.rand()<epsilon):
+		return np.random.randint(1, 5)
+	else:
+		Q_value = np.zeros(4)
+		for action in range(1, 5):
+			Q_value[action-1] = Q(weights, state, action) + np.dot(human_reward_weight, state_action_vec(state, action))
+		best_action = np.random.choice(np.flatnonzero(Q_value == Q_value.max()))+1
 		return best_action
 
 def main():
@@ -44,17 +53,16 @@ def main():
 	env = RoboTaxiEnv(config=config['practice']['gameConfig'])
 	num_episodes = 10000
 	alpha = 0.01
+	alpha_h = 0.1
 	gamma = 0.7
-	epsilons = [0.3, 0.2, 0.1, 0.05]
-	#epsilon = 0.05
-	#q_func = QFunction(28)
-	#q_func.load("weights/28features32x16model.pt")
+	epsilons = [0.1, 0.1, 0.05, 0.05]
+	run_till_complete = False
 
-	#w = np.zeros(10)
-	#w = np.load("weights/10params_100episodes.npy")
 	w = np.zeros(800)
+	h = np.zeros(800)
 	R = []
 	delivered = 0
+	died = 0
 	
 	for episode in range(num_episodes):
 		if episode < num_episodes/4:
@@ -69,23 +77,35 @@ def main():
 		cum_reward = 0
 		done = False
 		state, info = env.reset()
-		#acorn_loc = get_acorn_loc(state)
-		#squirrel_loc = get_squirrel_loc(state)
-		#bomb_loc = get_bomb_loc(state)
-		#state_mod = [state[1],acorn_loc,squirrel_loc, bomb_loc,state[2]]
-		
+		if not run_till_complete:
+			env.render()
+			time.sleep(1)
 		while not done:
-			#env.render()
-			#time.sleep(0.5)
-			action = epsilon_greedy_action(w, state, epsilon)
+			action = epsilon_greedy_action_with_H(w, state, h, epsilon)
 			new_state, reward, done, info = env.step(action)
-			#new_state_mod = [new_state[1], acorn_loc, squirrel_loc, bomb_loc, new_state[2]]
+			if not run_till_complete:
+				env.render()
+				h_r = input("rate the action:\n")
+				if h_r == '':
+					h_r = 0
+				elif h_r == 'q':
+					run_till_complete = True
+					h_r = 0
+				else:
+					h_r = int(h_r)
+			else:
+				h_r = 0
+
 			if reward >= 7:
 				delivered +=1
+			if reward <= -10:
+				died += 1
 			td_error = reward+gamma*Q_max_a(w,new_state) - Q(w,state,action)
 			w = w + alpha*td_error*state_action_vec(state,action)
+			h = h + alpha_h*h_r*state_action_vec(state,action)
 			state = new_state
 			cum_reward += reward
+			
 		R.append(cum_reward)
 		
 		if episode%100 == 0:
@@ -93,9 +113,9 @@ def main():
 		
 	plt.plot(R)
 	plt.show()
-	print(delivered)
-	#q_func.save("weights/40features32x16model_map2.pt")
-	np.save("weights/800onehot",w)
+	print('times deliverd:',delivered)
+	print('times died:', died)
+
 
 if __name__ == '__main__':
 	main()
