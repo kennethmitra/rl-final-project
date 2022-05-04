@@ -117,7 +117,7 @@ def select_action(weights, state, human_reward_weight, epsilon, method, p_human=
 sigmoid_fn = lambda x: 1 / (1 + np.exp(-x))
 
 
-def get_human_reward(env, old_obs, new_obs, simulated=True):
+def get_human_reward(env, old_obs, new_obs, simulated=True, soft_rewards=True):
     if not simulated:
         run_till_complete = False
         env.render()
@@ -134,11 +134,12 @@ def get_human_reward(env, old_obs, new_obs, simulated=True):
         field_before = compute_potential_field(env, old_obs)
         field_after = compute_potential_field(env, new_obs)
 
-        # For Soft Rewards
-        h_r = 2 * sigmoid_fn(field_before - field_after) - 1  # Scale to (-1, 1)
-
-        # For Hard Rewards
-        # h_r = 1 if field_before > field_after else -1
+        if soft_rewards:
+            # For Soft Rewards
+            h_r = 2 * sigmoid_fn(field_before - field_after) - 1  # Scale to (-1, 1)
+        else:
+            # For Hard Rewards
+            h_r = 1 if field_before > field_after else -1
 
         run_till_complete = False
 
@@ -176,7 +177,7 @@ def compute_potential_field(env, obs):
     return total_potential
 
 
-def main():
+def main(params):
     # Logging Setup
     writer = SummaryWriter()
 
@@ -185,13 +186,14 @@ def main():
         config = json.load(config_file)
 
     env = RoboTaxiEnv(config=config['practice']['gameConfig'])
-    num_episodes = 10000
-    alpha = 0.01
-    alpha_h = 0.1
-    gamma = 0.95 #0.7
-    epsilons = [0.1, 0.1, 0.05, 0.05]
-    ACTION_SELECTION_METHOD = "control_sharing"
-    P_HUMAN = 0.3
+    num_episodes = params.get('num_episodes', 10000)
+    alpha = params.get('alpha', 0.01)
+    alpha_h = params.get('alpha_h', 0.1)
+    gamma = params.get('gamma', 0.95) #0.7
+    epsilons = params.get('epsilons', [0.1, 0.1, 0.05, 0.05])
+    ACTION_SELECTION_METHOD = params.get('ACTION_SELECTION_METHOD', "control_sharing")
+    P_HUMAN = params.get('P_HUMAN', 0.3)
+    USE_SOFT_REWARDS = params.get('USE_SOFT_REWARDS', True)
     simulated_human_rewards = True
     run_till_complete = False
 
@@ -231,7 +233,7 @@ def main():
             new_state, reward, done, info = env.step(action)
             if not run_till_complete:
                 # env.render()
-                h_r, run_till_complete = get_human_reward(env, state, new_state, simulated=True)
+                h_r, run_till_complete = get_human_reward(env, state, new_state, simulated=True, soft_rewards=USE_SOFT_REWARDS)
                 # print("Human Reward:", h_r)
                 # time.sleep(2)
             else:
@@ -280,16 +282,39 @@ def main():
     print('times deliverd:', delivered)
     print('times died:', died)
 
+    action_labels = ["UP", "RIGHT", "DOWN", "LEFT"]
     H_no_acorn, H_acorn = visualize_H(h)
-    sns.heatmap(H_no_acorn[:, :, 0])
-    plt.title("Learned H for UP action")
-    plt.show()
+    for action in range(0, 5):
+        sns.heatmap(H_no_acorn[:, :, action])
+        plt.title(f"H for {action_labels[action]} action NO Acorn")
+        writer.add_figure(f"H for {action_labels[action]} action NO Acorn", plt.gcf())
+    for action in range(0, 5):
+        sns.heatmap(H_acorn[:, :, action])
+        plt.title(f"H for {action_labels[action]} action NO Acorn")
+        writer.add_figure(f"H for {action_labels[action]} action WITH Acorn", plt.gcf())
 
     Q_no_acorn, Q_acorn = visualize_Q(w)
-    sns.heatmap(Q_no_acorn[:, :, 0])
-    plt.title("Learned Q for UP action")
-    plt.show()
+    for action in range(0, 5):
+        sns.heatmap(Q_no_acorn[:, :, action])
+        plt.title(f"Q for {action_labels[action]} action NO Acorn")
+        writer.add_figure(f"Q for {action_labels[action]} action NO Acorn", plt.gcf())
+    for action in range(0, 5):
+        sns.heatmap(Q_acorn[:, :, action])
+        plt.title(f"Q for {action_labels[action]} action NO Acorn")
+        writer.add_figure(f"Q for {action_labels[action]} action WITH Acorn", plt.gcf())
 
 
 if __name__ == '__main__':
-    main()
+
+    params_to_try = [
+        {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [0.1, 0.1, 0.05, 0.05]},
+        {'ACTION_SELECTION_METHOD': 'action_biasing', 'USE_SOFT_REWARDS': True},
+        {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 0.5, 'USE_SOFT_REWARDS': True},
+        {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': False, 'epsilons': [0.1, 0.1, 0.05, 0.05]},
+        {'ACTION_SELECTION_METHOD': 'action_biasing', 'USE_SOFT_REWARDS': False},
+        {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 0.5, 'USE_SOFT_REWARDS': False}
+    ]
+
+    for param in params_to_try:
+        print(param)
+        main(param)
