@@ -188,10 +188,20 @@ def main():
     num_episodes = 10000
     alpha = 0.01
     alpha_h = 0.1
-    gamma = 0.95#0.7
+    gamma = 0.95 #0.7
     epsilons = [0.1, 0.1, 0.05, 0.05]
+    ACTION_SELECTION_METHOD = "control_sharing"
+    P_HUMAN = 0.3
     simulated_human_rewards = True
     run_till_complete = False
+
+    writer.add_text("num_episodes", str(num_episodes))
+    writer.add_text("alpha", str(alpha))
+    writer.add_text("alpha_h", str(alpha_h))
+    writer.add_text("gamma", str(gamma))
+    writer.add_text("epsilons", str(epsilons))
+    writer.add_text("ACTION_SELECTION_METHOD", ACTION_SELECTION_METHOD)
+    writer.add_text("P_HUMAN", str(P_HUMAN))
 
     w = np.zeros(800)
     h = np.zeros(800)
@@ -217,7 +227,7 @@ def main():
             env.render()
             time.sleep(1)
         while not done:
-            action = select_action(w, state, h, epsilon, method="e_greedy", p_human=0.5)
+            action = select_action(w, state, h, epsilon, method=ACTION_SELECTION_METHOD, p_human=P_HUMAN)
             new_state, reward, done, info = env.step(action)
             if not run_till_complete:
                 # env.render()
@@ -244,9 +254,23 @@ def main():
             td_error_hist.append(td_error)
 
         R.append(cum_reward)
-        writer.add_scalar('Reward/Episode_Reward', cum_reward, episode)
+        writer.add_scalar('Train/Episode_Reward', cum_reward, episode)
+        writer.add_scalar('Train/Episode_Len', len(td_error_hist), episode)
         writer.add_scalar('Params/Epsilon', epsilon, episode)
-        writer.add_scalar('Loss/td_error', np.array(td_error_hist).mean(), episode)
+        writer.add_scalar('Train/td_error', np.array(td_error_hist).mean(), episode)
+
+        # Eval Episode
+        done = False
+        state, info = env.reset()
+        eval_rew_hist = []
+        while not done:
+            action = select_action(w, state, h, epsilon=0, method='e_greedy', p_human=P_HUMAN)  # Deterministic action selection
+            new_state, reward, done, info = env.step(action)
+            state = new_state
+            eval_rew_hist.append(reward)
+        writer.add_scalar('Eval/Episode_Reward', np.array(eval_rew_hist).sum(), episode)
+        writer.add_scalar('Eval/Episode_Len', len(eval_rew_hist), episode)
+
 
         if episode % 100 == 0:
             print("trained episode {}".format(episode))
