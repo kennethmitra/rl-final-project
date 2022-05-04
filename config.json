@@ -5,13 +5,13 @@
       "max_steps": 100,
       "num_bombs": 3,
       "rng_seed": 42,
-      "initial_avoidance_dist": 3,
+      "initial_avoidance_dist": 1,
       "rewards": {
-        "bomb":-10,
+        "bomb":-20,
         "acorn":5,
         "delivered":10,
         "wall":0,
-        "ts": -1,
+        "ts": -0.1,
         "max_steps_exceeded": 0
       },
       "randomize_map": false,
@@ -30,7 +30,7 @@
            [1 ,1 ,1 ,1 ,1 ,1 ,1 ,1 ,1 ,1 ,1 ,1]],
       "preset_player_orientation": [0, 1],
       "preset_player_location": [1, 2],
-      "rerandomize_player_start": false
+      "rerandomize_player_start": true
     },
     "pregame_countdown_secs": 15,
     "inter_episode_countdown_secs": 3,

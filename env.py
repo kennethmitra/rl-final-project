@@ -1,4 +1,5 @@
 import time
+from collections import defaultdict
 
 import gym
 from enum import Enum
@@ -61,6 +62,11 @@ class RoboTaxiEnv(gym.Env):
         self.ts = 0
         self.cumulative_reward = 0
         self.last_n_actions = [Action.NOP.value] * self.explore_after_n
+
+        # Initialized in reset()
+        self.bomb_rcs = []
+        self.squirrel_rc = None
+        self.nut_rc = None
 
     def step(self, action):
         timestep_reward = 0
@@ -197,7 +203,7 @@ class RoboTaxiEnv(gym.Env):
                 # Place robotaxi
                 player_loc = self.np_random.integers(low=(1, 1), high=(self.map_size[1] - 1, self.map_size[0] - 1))
                 self.player_loc = (
-                int(player_loc[0]), int(player_loc[1]))  # Ensure dtype is int not numpy to be able to JSONify
+                    int(player_loc[0]), int(player_loc[1]))  # Ensure dtype is int not numpy to be able to JSONify
 
                 # Pick starting direction
                 possible_Orientations = []
@@ -242,8 +248,8 @@ class RoboTaxiEnv(gym.Env):
 
                 # Check criteria
                 element_rcs = []
-                for r in range(1, self.map.shape[0]-1):  # Avoid borders
-                    for c in range(1, self.map.shape[1]-1):  # Avoid borders
+                for r in range(1, self.map.shape[0] - 1):  # Avoid borders
+                    for c in range(1, self.map.shape[1] - 1):  # Avoid borders
                         if not (self.map[r, c] == CellType.BLANK.value):
                             element_rcs.append((r, c))
 
@@ -252,7 +258,7 @@ class RoboTaxiEnv(gym.Env):
                     for j in range(len(element_rcs)):
                         if i == j:
                             continue
-                        if abs(element_rcs[i][0] - element_rcs[j][0]) +  abs(element_rcs[i][1] - element_rcs[j][1]) < 4:
+                        if abs(element_rcs[i][0] - element_rcs[j][0]) + abs(element_rcs[i][1] - element_rcs[j][1]) < 4:
                             found_issue = True
                             break
                     if found_issue:
@@ -260,16 +266,6 @@ class RoboTaxiEnv(gym.Env):
 
                 if not found_issue:
                     meets_criteria = True
-
-                # found_issue = False
-                # for el_rc in element_rcs:
-                #
-                #     if (el_rc[0] - 1, el_rc[1]) in element_rcs or (el_rc[0] + 1, el_rc[1]) in element_rcs or (el_rc[0], el_rc[1] - 1) in element_rcs or (el_rc[0], el_rc[1] + 1) in element_rcs:
-                #         found_issue = True
-                #         break
-                # if not found_issue:
-                #     meets_criteria = True
-
 
             # Rerandomize player start
             if self.rerandomize_player_start:
@@ -301,7 +297,6 @@ class RoboTaxiEnv(gym.Env):
 
         else:  # Load preset map
             self.map = np.asarray(self.preset_map)
- 
 
             # Rerandomize player start
             if self.rerandomize_player_start:
@@ -330,11 +325,24 @@ class RoboTaxiEnv(gym.Env):
 
                 # Choose player location
                 self.player_loc = rereandomizer_random.choice(list(open_locs))[::-1]
-                
+
             else:
                 self.player_loc = tuple(self.preset_player_location)
                 self.player_orientation = Direction(tuple(self.preset_player_orientation))
-            
+
+        # Save game object locations for analysis and human feedback
+        map_dict = defaultdict(list)
+
+        env_map = self.map[1:-1, 1:-1]
+
+        for r in range(env_map.shape[0]):
+            for c in range(env_map.shape[1]):
+                if env_map[r, c] != 0:
+                    map_dict[env_map[r, c]].append((r, c))
+
+        self.bomb_rcs = map_dict[CellType.BOMB.value]
+        self.squirrel_rc = map_dict[CellType.SQUIRREL.value][0]
+        self.nut_rc = map_dict[CellType.ACORN.value][0]
 
         # obs, info
         return (self.map.copy(), self.player_loc, self.has_acorn), dict(map=self.map.copy(),
@@ -363,17 +371,19 @@ class RoboTaxiEnv(gym.Env):
                     elif self.map[(r, c)] == CellType.SQUIRREL.value:
                         str_map[r][c] = 'S'
 
-            str_map[self.player_loc[1]][self.player_loc[0]] = 'R'
+            str_map[self.player_loc[1]][self.player_loc[0]] = ('^', '>', 'v', '<')[
+                Direction2Int[self.player_orientation]]
 
             # Display the info
             clear()
 
             print("Map:")
             for row in str_map:
-                print(row)
+                print(" ".join(row))
 
             print(f"Player Location: {self.player_loc}")
             print(f"Player Orientation: {self.player_orientation}")
+            print(f"Has Acorn: {self.has_acorn}")
 
     def seed(self, seed=None):
         if seed:
