@@ -98,6 +98,15 @@ def epsilon_greedy_action_with_H(weights, state, human_reward_weight, epsilon, t
         best_action = np.random.choice(np.flatnonzero(Q_value == Q_value.max())) + 1
         return best_action
 
+def H_greedy_epsilon(human_reward_weight, state, epsilon):
+    if (np.random.rand() < epsilon):
+        return np.random.randint(1, 5)
+    else:
+        H_value = np.zeros(4)
+        for action in range(1, 5):
+            H_value[action - 1] = H(human_reward_weight, state, action)
+        best_action = np.random.choice(np.flatnonzero(H_value == H_value.max())) + 1
+        return best_action
 
 def control_sharing(weights, state, human_reward_weight, p_human, ts, decay_param=1):
     if (np.random.rand() < decay_param**ts * p_human):
@@ -121,7 +130,8 @@ def select_action(weights, state, human_reward_weight, epsilon, method, ts, p_hu
         return epsilon_greedy_action_with_H(weights, state, human_reward_weight, epsilon, ts=ts, decay_param=decay_param)
     elif method == "control_sharing":
         return control_sharing(weights, state, human_reward_weight, ts=ts, p_human=p_human, decay_param=decay_param)
-
+    elif method =="h_greedy":
+        return H_greedy_epsilon(human_reward_weight, state, epsilon)
 
 sigmoid_fn = lambda x: 1 / (1 + np.exp(-x))
 
@@ -260,7 +270,7 @@ def main(params):
                 h_pred = H(h, state, action)
                 h = h + alpha_h * (h_r - h_pred) * state_action_vec(state, action)
 
-            td_error = H(h, state, action) + gamma * Q_max_a(w, new_state) - Q(w, state, action) #+ reward
+            td_error = reward + gamma * Q_max_a(w, new_state) - Q(w, state, action)
             w = w + alpha * td_error * state_action_vec(state, action)
 
             state = new_state
@@ -345,10 +355,10 @@ if __name__ == '__main__':
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': True},
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': False},
 
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'USE_SOFT_REWARDS': True, 'epsilons': [1, 0.75, 0.5, 0.25]},
-        # {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': False, 'epsilons': [1, 0.75, 0.5, 0.25]},
-        {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': True},
-        {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': False},
+        {'ACTION_SELECTION_METHOD': 'h_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [0.5, 0.3, 0.1, 0.05]},
+        {'ACTION_SELECTION_METHOD': 'h_greedy', 'USE_SOFT_REWARDS': False, 'epsilons': [0.5, 0.3, 0.1, 0.05]},
+        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': True},
+        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': False},
     ]
 
     for param in params_to_try:
