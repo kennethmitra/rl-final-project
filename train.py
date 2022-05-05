@@ -4,6 +4,8 @@ import numpy as np
 import gym
 import json
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MultipleLocator
+
 from env import RoboTaxiEnv, CellType, loc2tuple
 from util import state_action_vec, get_acorn_loc, get_squirrel_loc, get_bomb_loc
 from Net import QFunction
@@ -67,6 +69,60 @@ def visualize_Q(w):
                 Q_mat_acorn[r-1, c-1, a-1] = Q(w, (None, (c, r), True), a)
 
     return Q_mat_no_acorn, Q_mat_acorn
+
+def visualize_policy(w, writer, episode):
+
+    Q_a = np.zeros(4)
+    act2dir = [(0, -1), (1, 0), (0, 1), (-1, 0)]
+
+    # Without acorn
+    x_s = []
+    y_s = []
+    x_direct = []
+    y_direct = []
+    for r in range(1, 11):
+        for c in range(1, 11):
+            x_s.append(c)
+            y_s.append(r)
+            for a in range(1, 5):
+                Q_a[a - 1] = Q(w, (None, (c, r), False), a)
+            opt_act = Q_a.argmax()
+            x_direct.append(act2dir[opt_act][0])
+            y_direct.append(act2dir[opt_act][1])
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.quiver(x_s, y_s, x_direct, y_direct)
+    ax.set_ylim(ax.get_ylim()[::-1])
+    ax.xaxis.set_minor_locator(MultipleLocator(0.5))
+    ax.xaxis.set_major_locator(MultipleLocator(1))
+    ax.yaxis.set_minor_locator(MultipleLocator(0.5))
+    ax.yaxis.set_major_locator(MultipleLocator(1))
+    ax.grid(visible=True, which='minor')
+    writer.add_figure("Policy NO acorn", fig, global_step=episode)
+
+    # With acorn
+    x_s = []
+    y_s = []
+    x_direct = []
+    y_direct = []
+    for r in range(1, 11):
+        for c in range(1, 11):
+            x_s.append(c)
+            y_s.append(r)
+            for a in range(1, 5):
+                Q_a[a - 1] = Q(w, (None, (c, r), True), a)
+            opt_act = Q_a.argmax()
+            x_direct.append(act2dir[opt_act][0])
+            y_direct.append(act2dir[opt_act][1])
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.quiver(x_s, y_s, x_direct, y_direct)
+    ax.set_ylim(ax.get_ylim()[::-1])
+    ax.xaxis.set_minor_locator(MultipleLocator(0.5))
+    ax.xaxis.set_major_locator(MultipleLocator(1))
+    ax.yaxis.set_minor_locator(MultipleLocator(0.5))
+    ax.yaxis.set_major_locator(MultipleLocator(1))
+    ax.grid(visible=True, which='minor')
+    writer.add_figure("Policy WITH acorn", fig, global_step=episode)
+
 
 def visualize_potential_field(env):
     pf_no_acorn = np.zeros((10, 10))
@@ -176,6 +232,7 @@ def compute_potential_field(env, obs):
     DIV_EPS = 1e-3
 
     player_rc = loc2tuple(obs[1])
+    player_rc = (player_rc[0]-1, player_rc[1]-1)
     has_acorn = obs[2]
 
     total_potential = 0
@@ -183,7 +240,7 @@ def compute_potential_field(env, obs):
     # Bombs repel the player with force proportional to 1/r^2
     for bomb in env.bomb_rcs:
         d = dist(bomb, player_rc)
-        total_potential += BOMB_CONSTANT / (d ** 2 + DIV_EPS)
+        total_potential += BOMB_CONSTANT / (d + DIV_EPS)
 
     # Goal attracts the player
     if not has_acorn:
@@ -207,7 +264,7 @@ def main(params):
         config = json.load(config_file)
 
     env = RoboTaxiEnv(config=config['practice']['gameConfig'])
-    num_episodes = params.get('num_episodes', 2000)
+    num_episodes = params.get('num_episodes', 10000)
     alpha = params.get('alpha', 0.01)
     alpha_h = params.get('alpha_h', 0.1)
     gamma = params.get('gamma', 0.95) #0.7
@@ -298,12 +355,15 @@ def main(params):
 
         if episode % 100 == 0:
             print("trained episode {}".format(episode))
+            # Visualize Policy
+            visualize_policy(w, writer, episode)
 
     plt.plot(R)
     plt.show()
     print('times deliverd:', delivered)
     print('times died:', died)
 
+    # Visualize H
     action_labels = ["UP", "RIGHT", "DOWN", "LEFT"]
     H_no_acorn, H_acorn = visualize_H(h)
     for action in range(0, 4):
@@ -315,6 +375,7 @@ def main(params):
         plt.title(f"H for {action_labels[action]} action NO Acorn")
         writer.add_figure(f"H for {action_labels[action]} action WITH Acorn", plt.gcf())
 
+    # Visualize Q
     Q_no_acorn, Q_acorn = visualize_Q(w)
     for action in range(0, 4):
         sns.heatmap(Q_no_acorn[:, :, action])
@@ -335,11 +396,14 @@ def main(params):
     plt.title(f"Potential Field WITH Acorn")
     writer.add_figure(f"Potential Field WITH Acorn", plt.gcf())
 
+    # Visualize Policy
+    visualize_policy(w, writer, episode)
+
 
 if __name__ == '__main__':
 
     params_to_try = [
-        # {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [0.1, 0.1, 0.05, 0.05]},
+        {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [0.3, 0.2, 0.1, 0.05], 'num_episodes': 10000},
         # {'ACTION_SELECTION_METHOD': 'action_biasing', 'USE_SOFT_REWARDS': True},
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 0.5, 'USE_SOFT_REWARDS': True},
         # {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': False, 'epsilons': [0.1, 0.1, 0.05, 0.05]},
@@ -355,8 +419,8 @@ if __name__ == '__main__':
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': True},
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': False},
 
-        {'ACTION_SELECTION_METHOD': 'h_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [0.5, 0.3, 0.1, 0.05]},
-        {'ACTION_SELECTION_METHOD': 'h_greedy', 'USE_SOFT_REWARDS': False, 'epsilons': [0.5, 0.3, 0.1, 0.05]},
+        # {'ACTION_SELECTION_METHOD': 'h_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [1.0, 0.5, 0.1, 0.05]},
+        # {'ACTION_SELECTION_METHOD': 'h_greedy', 'USE_SOFT_REWARDS': False, 'epsilons': [1.0, 0.5, 0.1, 0.05]},
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': True},
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': False},
     ]
