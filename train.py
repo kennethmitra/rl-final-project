@@ -296,7 +296,7 @@ def get_human_reward(env, old_obs, new_obs, action, simulated=True, soft_rewards
                 else:
                     h_r = -0.5
             else:
-                if env.optimal_no_acorn[player_rc[0]][player_rc[1]] == arrows[action]:
+                if env.optimal_w_acorn[player_rc[0]][player_rc[1]] == arrows[action]:
                     h_r = 0.5
                 else:
                     h_r = -0.5
@@ -362,6 +362,9 @@ def main(params):
     simulated_human_rewards = True
     run_till_complete = False
 
+    MANUAL_RUN = True
+    run_to_episode = -1
+
     writer.add_text("num_episodes", str(num_episodes))
     writer.add_text("alpha", str(alpha))
     writer.add_text("alpha_h", str(alpha_h))
@@ -392,12 +395,27 @@ def main(params):
         td_error_hist = []
         done = False
         state, info = env.reset()
-        if True or (not run_till_complete and not simulated_human_rewards):
+        if MANUAL_RUN or (not run_till_complete and not simulated_human_rewards):
             env.render()
-            _ = input("[Enter] to advance")
+            manual_run_episode = MANUAL_RUN
+        else:
+            manual_run_episode = False
         while not done:
             action = select_action(w, state, h, epsilon, ts=episode, method=ACTION_SELECTION_METHOD, p_human=P_HUMAN, decay_param=DECAY_PARAM, env=env)
             new_state, reward, done, info = env.step(action)
+
+            # Manual Run
+            if manual_run_episode and run_to_episode <= episode:
+                env.render()
+                c = input(">").strip()
+                if c == 's':  # skip episode
+                    manual_run_episode = False
+                elif c == 'x':  # exit manual mode
+                    manual_run_episode = False
+                    MANUAL_RUN = False
+                elif c.isnumeric():
+                    run_to_episode = episode + int(c)
+
             if not (run_till_complete or episode > HUMAN_TRAINING_EPISODES):
                 h_r, run_till_complete = get_human_reward(env, state, new_state, action=action, simulated=True, soft_rewards=USE_SOFT_REWARDS, method="BFS")
             else:
@@ -490,7 +508,7 @@ if __name__ == '__main__':
 
     params_to_try = [
         # {'ACTION_SELECTION_METHOD': 'optimal_policy', 'USE_SOFT_REWARDS': True,'epsilons': [0.3, 0.2, 0.1, 0.05], 'num_episodes': 1000},
-        {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [0.3, 0.2, 0.1, 0.05], 'num_episodes': 100},
+        {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [0.3, 0.2, 0.1, 0.05], 'num_episodes': 1000},
         # {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [0.3, 0.2, 0.1, 0.05], 'num_episodes': 5000},
 
         # {'ACTION_SELECTION_METHOD': 'action_biasing', 'USE_SOFT_REWARDS': True},
