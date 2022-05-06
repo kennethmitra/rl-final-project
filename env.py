@@ -1,3 +1,4 @@
+import heapq
 import time
 from collections import defaultdict
 
@@ -7,6 +8,7 @@ from random import Random
 import numpy as np
 import os
 import subprocess
+from util import AcutallyUsefulPriorityQueue
 
 
 class RoboTaxiEnv(gym.Env):
@@ -67,6 +69,9 @@ class RoboTaxiEnv(gym.Env):
         self.bomb_rcs = []
         self.squirrel_rc = None
         self.nut_rc = None
+
+        self.optimal_no_acorn = None
+        self.optimal_w_acorn = None
 
     def step(self, action):
         timestep_reward = 0
@@ -344,6 +349,8 @@ class RoboTaxiEnv(gym.Env):
         self.squirrel_rc = map_dict[CellType.SQUIRREL.value][0]
         self.nut_rc = map_dict[CellType.ACORN.value][0]
 
+        self.compute_optimal_solution()
+
         # obs, info
         return (self.map.copy(), self.player_loc, self.has_acorn), dict(map=self.map.copy(),
                                                                         player_location=self.player_loc,
@@ -396,6 +403,83 @@ class RoboTaxiEnv(gym.Env):
     def close(self):
         pass
 
+    def compute_optimal_solution(self):
+        # No acorn
+        self.optimal_no_acorn = self._get_policy_grid(self.nut_rc)
+        # With Acorn
+        self.optimal_w_acorn = self._get_policy_grid(self.squirrel_rc)
+
+    def _get_policy_grid(self, goal_rc):
+        policy = [["" for i in range(10)] for j in range(10)]
+        not_filled_in = set()
+        for i in range(10):
+            for j in range(10):
+                not_filled_in.add((i, j))
+
+        goal = (goal_rc[1], goal_rc[0])
+        not_filled_in.remove(goal)
+        policy[goal[1]][goal[0]] = "v"  # Doesnt matter
+
+        while len(not_filled_in) > 0:
+            start = next(iter(not_filled_in))
+            path = self._bfs(start, goal, self.map)
+
+            for p, n in zip(path[:-1], path[1:]):
+                diff = (n[0] - p[0], n[1] - p[1])
+                action = Direction2Int[Direction(diff)]
+                policy[loc2tuple(p)[0]][loc2tuple(p)[1]] = ('^', '>', 'v', '<')[action]
+                not_filled_in.discard(p)
+        return policy
+
+    def _bfs(self, start, end, map):
+        """
+        :param start: player location (x, y) (0 indexed, not map coordinates)
+        :param end: goal (x, y) (0 indexed, not map coordinates)
+        :param map: self.map
+        :return: path (0 indexed)
+        """
+
+        frontier = AcutallyUsefulPriorityQueue(priority_fn=lambda x: dist(x, end))
+        parent = dict()
+        visited = set()
+
+        frontier.add(start)
+        parent[start] = None
+
+        while not frontier.isEmpty():
+            curNode = frontier.pop()
+
+            if curNode == end:
+                break
+
+            for neigh in getNeighbors(curNode):
+                if map[(loc2tuple(neigh)[0]+1, loc2tuple(neigh)[1]+1)] == CellType.BOMB.value or neigh in visited:
+                    continue
+                parent[neigh] = curNode
+                frontier.add(neigh)
+                visited.add(neigh)
+
+        curNode = end
+        path_reversed = []
+        while curNode != start:
+            path_reversed.append(curNode)
+            curNode = parent[curNode]
+        path_reversed.append(curNode)
+
+        return path_reversed[::-1]
+
+
+def dist(loc1, loc2):
+    # return np.sqrt((loc1[0] - loc2[0]) ** 2 + (loc1[1] - loc2[1]) ** 2)
+    return abs(loc1[0] - loc2[0]) + abs(loc1[1] - loc2[1])  # Manhattan Distance
+
+def getNeighbors(loc):
+    """Assumes map is 10 long and indexes from 0 through 9"""
+    neighbors = [(loc[0] - 1, loc[1]), (loc[0] + 1, loc[1]), (loc[0], loc[1] - 1), (loc[0], loc[1] + 1)]
+    return filter(isValidCell, neighbors)
+
+def isValidCell(cell):
+    return cell[0] >= 0 and cell[0] < 10 and cell[1] >= 0 and cell[1] < 10
 
 def loc2tuple(loc):
     """

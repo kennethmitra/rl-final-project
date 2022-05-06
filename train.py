@@ -70,10 +70,65 @@ def visualize_Q(w):
 
     return Q_mat_no_acorn, Q_mat_acorn
 
+def visualize_optimal_policy(env, writer):
+    arrows = ('^', '>', 'v', '<')
+    act2dir = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+
+    # No Acorn
+    x_s = []
+    y_s = []
+    x_direct = []
+    y_direct = []
+    for r in range(10):
+        for c in range(10):
+            dir = env.optimal_no_acorn[r][c]
+            dir_idx = arrows.index(dir)
+            x_s.append(c)
+            y_s.append(r)
+            x_direct.append(act2dir[dir_idx][0])
+            y_direct.append(act2dir[dir_idx][1])
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.quiver(x_s, y_s, x_direct, y_direct)
+    ax.set_ylim(ax.get_ylim()[::-1])
+    ax.xaxis.set_minor_locator(MultipleLocator(0.5))
+    ax.xaxis.set_major_locator(MultipleLocator(1))
+    ax.yaxis.set_minor_locator(MultipleLocator(0.5))
+    ax.yaxis.set_major_locator(MultipleLocator(1))
+    ax.grid(visible=True, which='minor')
+    writer.add_figure("Optimal Policy NO acorn", fig)
+    print("Optimal Policy NO acorn")
+
+    # WITH Acorn
+    x_s = []
+    y_s = []
+    x_direct = []
+    y_direct = []
+    for r in range(10):
+        for c in range(10):
+            dir = env.optimal_w_acorn[r][c]
+            dir_idx = arrows.index(dir)
+            x_s.append(c)
+            y_s.append(r)
+            x_direct.append(act2dir[dir_idx][0])
+            y_direct.append(act2dir[dir_idx][1])
+    fig, ax = plt.subplots(figsize=(10, 10))
+    ax.quiver(x_s, y_s, x_direct, y_direct)
+    ax.set_ylim(ax.get_ylim()[::-1])
+    ax.xaxis.set_minor_locator(MultipleLocator(0.5))
+    ax.xaxis.set_major_locator(MultipleLocator(1))
+    ax.yaxis.set_minor_locator(MultipleLocator(0.5))
+    ax.yaxis.set_major_locator(MultipleLocator(1))
+    ax.grid(visible=True, which='minor')
+    writer.add_figure("Optimal Policy WITH acorn", fig)
+    writer.add_figure("Optimal Policy WITH acorn", fig)
+    writer.add_figure("Optimal Policy WITH acorn", fig)
+    writer.add_figure("Optimal Policy WITH acorn", fig)
+    print("Optimal Policy WITH acorn")
+
 def visualize_policy(w, writer, episode):
 
     Q_a = np.zeros(4)
-    act2dir = [(0, -1), (1, 0), (0, 1), (-1, 0)]
+    act2dir = [(0, 1), (1, 0), (0, -1), (-1, 0)]
 
     # Without acorn
     x_s = []
@@ -82,8 +137,8 @@ def visualize_policy(w, writer, episode):
     y_direct = []
     for r in range(1, 11):
         for c in range(1, 11):
-            x_s.append(c)
-            y_s.append(r)
+            x_s.append(c-1)
+            y_s.append(r-1)
             for a in range(1, 5):
                 Q_a[a - 1] = Q(w, (None, (c, r), False), a)
             opt_act = Q_a.argmax()
@@ -106,8 +161,8 @@ def visualize_policy(w, writer, episode):
     y_direct = []
     for r in range(1, 11):
         for c in range(1, 11):
-            x_s.append(c)
-            y_s.append(r)
+            x_s.append(c-1)
+            y_s.append(r-1)
             for a in range(1, 5):
                 Q_a[a - 1] = Q(w, (None, (c, r), True), a)
             opt_act = Q_a.argmax()
@@ -179,20 +234,30 @@ def control_sharing(weights, state, human_reward_weight, p_human, ts, decay_para
         return best_action
 
 
-def select_action(weights, state, human_reward_weight, epsilon, method, ts, p_human=0.5, decay_param=1):
+def select_action(weights, state, human_reward_weight, epsilon, method, ts, env, p_human=0.5, decay_param=1):
     if method == "e_greedy":
         return epsilon_greedy_action(weights, state, epsilon)
     elif method == "action_biasing":
         return epsilon_greedy_action_with_H(weights, state, human_reward_weight, epsilon, ts=ts, decay_param=decay_param)
     elif method == "control_sharing":
         return control_sharing(weights, state, human_reward_weight, ts=ts, p_human=p_human, decay_param=decay_param)
-    elif method =="h_greedy":
+    elif method == "h_greedy":
         return H_greedy_epsilon(human_reward_weight, state, epsilon)
+    elif method == "optimal_policy":
+        arrows = ('^', '>', 'v', '<')
+        has_acorn = state[2]
+        player_rc = loc2tuple(state[1])
+        player_rc = (player_rc[0] - 1, player_rc[1] - 1)
+
+        if not has_acorn:
+            return arrows.index(env.optimal_no_acorn[player_rc[0]][player_rc[1]]) + 1
+        else:
+            return arrows.index(env.optimal_w_acorn[player_rc[0]][player_rc[1]]) + 1
 
 sigmoid_fn = lambda x: 1 / (1 + np.exp(-x))
 
 
-def get_human_reward(env, old_obs, new_obs, simulated=True, soft_rewards=True):
+def get_human_reward(env, old_obs, new_obs, action, simulated=True, soft_rewards=True, method="BFS"):
     if not simulated:
         run_till_complete = False
         env.render()
@@ -206,15 +271,35 @@ def get_human_reward(env, old_obs, new_obs, simulated=True, soft_rewards=True):
         else:
             h_r = int(h_r)
     else:
-        field_before = compute_potential_field(env, old_obs)
-        field_after = compute_potential_field(env, new_obs)
+        if method == "field":
+            field_before = compute_potential_field(env, old_obs)
+            field_after = compute_potential_field(env, new_obs)
 
-        if soft_rewards:
-            # For Soft Rewards
-            h_r = 2 * sigmoid_fn(field_before - field_after) - 1  # Scale to (-1, 1)
-        else:
-            # For Hard Rewards
-            h_r = 1 if field_before > field_after else -1
+            if soft_rewards:
+                # For Soft Rewards
+                h_r =  (sigmoid_fn(field_before - field_after) - 0.5)  # Scale to (-1, 1)
+            else:
+                # For Hard Rewards
+                h_r = 1 if field_before > field_after else -1
+
+        elif method == "BFS":
+            action = action - 1
+            had_acorn = old_obs[2]
+            player_rc = loc2tuple(old_obs[1])
+            player_rc = (player_rc[0] - 1, player_rc[1] - 1)
+
+            arrows = ('^', '>', 'v', '<')
+
+            if not had_acorn:
+                if env.optimal_no_acorn[player_rc[0]][player_rc[1]] == arrows[action]:
+                    h_r = 0.5
+                else:
+                    h_r = -0.5
+            else:
+                if env.optimal_no_acorn[player_rc[0]][player_rc[1]] == arrows[action]:
+                    h_r = 0.5
+                else:
+                    h_r = -0.5
 
         run_till_complete = False
 
@@ -307,14 +392,14 @@ def main(params):
         td_error_hist = []
         done = False
         state, info = env.reset()
-        if (not run_till_complete and not simulated_human_rewards):
+        if True or (not run_till_complete and not simulated_human_rewards):
             env.render()
-            time.sleep(1)
+            _ = input("[Enter] to advance")
         while not done:
-            action = select_action(w, state, h, epsilon, ts=episode, method=ACTION_SELECTION_METHOD, p_human=P_HUMAN, decay_param=DECAY_PARAM)
+            action = select_action(w, state, h, epsilon, ts=episode, method=ACTION_SELECTION_METHOD, p_human=P_HUMAN, decay_param=DECAY_PARAM, env=env)
             new_state, reward, done, info = env.step(action)
             if not (run_till_complete or episode > HUMAN_TRAINING_EPISODES):
-                h_r, run_till_complete = get_human_reward(env, state, new_state, simulated=True, soft_rewards=USE_SOFT_REWARDS)
+                h_r, run_till_complete = get_human_reward(env, state, new_state, action=action, simulated=True, soft_rewards=USE_SOFT_REWARDS, method="BFS")
             else:
                 h_r = None
 
@@ -327,7 +412,7 @@ def main(params):
                 h_pred = H(h, state, action)
                 h = h + alpha_h * (h_r - h_pred) * state_action_vec(state, action)
 
-            td_error = reward + gamma * Q_max_a(w, new_state) - Q(w, state, action)
+            td_error = H(h, state, action) + gamma * Q_max_a(w, new_state) - Q(w, state, action) # reward
             w = w + alpha * td_error * state_action_vec(state, action)
 
             state = new_state
@@ -345,7 +430,7 @@ def main(params):
         state, info = env.reset()
         eval_rew_hist = []
         while not done:
-            action = select_action(w, state, h, epsilon=0, method='e_greedy', p_human=P_HUMAN, ts=0)  # Deterministic action selection
+            action = select_action(w, state, h, epsilon=0, method='e_greedy', p_human=P_HUMAN, ts=0, env=env)  # Deterministic action selection
             new_state, reward, done, info = env.step(action)
             state = new_state
             eval_rew_hist.append(reward)
@@ -398,21 +483,28 @@ def main(params):
 
     # Visualize Policy
     visualize_policy(w, writer, episode)
+    visualize_optimal_policy(env, writer)
 
 
 if __name__ == '__main__':
 
     params_to_try = [
-        {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [0.3, 0.2, 0.1, 0.05], 'num_episodes': 10000},
+        # {'ACTION_SELECTION_METHOD': 'optimal_policy', 'USE_SOFT_REWARDS': True,'epsilons': [0.3, 0.2, 0.1, 0.05], 'num_episodes': 1000},
+        {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [0.3, 0.2, 0.1, 0.05], 'num_episodes': 100},
+        # {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [0.3, 0.2, 0.1, 0.05], 'num_episodes': 5000},
+
         # {'ACTION_SELECTION_METHOD': 'action_biasing', 'USE_SOFT_REWARDS': True},
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 0.5, 'USE_SOFT_REWARDS': True},
-        # {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': False, 'epsilons': [0.1, 0.1, 0.05, 0.05]},
+        # {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': False, 'epsilons': [0.3, 0.2, 0.1, 0.05]},
         # {'ACTION_SELECTION_METHOD': 'action_biasing', 'USE_SOFT_REWARDS': False},
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 0.5, 'USE_SOFT_REWARDS': False},
 
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 0.999, 'USE_SOFT_REWARDS': True},
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 0.999, 'USE_SOFT_REWARDS': False},
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 0.99, 'USE_SOFT_REWARDS': True},
+
+        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 0.9977, 'num_episodes': 5000, 'alpha_h':1.0},
+        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 0.5, 'DECAY_PARAM': 0.9977, 'num_episodes': 5000, 'alpha_h': 1.0},
+
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 0.99, 'USE_SOFT_REWARDS': False},
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 0.9, 'USE_SOFT_REWARDS': True},
         # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 0.9, 'USE_SOFT_REWARDS': False},

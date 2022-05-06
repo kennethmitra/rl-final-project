@@ -1,29 +1,36 @@
+import heapq
+
 import numpy as np
 
+
 def get_bomb_loc(state):
-	map = state[0]
-	bomb_loc = []
-	for row in range(map.shape[0]):
-		for col in range(map.shape[1]):
-			if map[row, col]==2:
-				bomb_loc.append((col, row))
-	return bomb_loc
+    map = state[0]
+    bomb_loc = []
+    for row in range(map.shape[0]):
+        for col in range(map.shape[1]):
+            if map[row, col] == 2:
+                bomb_loc.append((col, row))
+    return bomb_loc
+
 
 def get_acorn_loc(state):
-	map = state[0]
-	for row in range(map.shape[0]):
-		for col in range(map.shape[1]):
-			if map[row, col]==3:
-				(acorn_x, acorn_y) = (col, row)
-				return (acorn_x, acorn_y)
-			
+    map = state[0]
+    for row in range(map.shape[0]):
+        for col in range(map.shape[1]):
+            if map[row, col] == 3:
+                (acorn_x, acorn_y) = (col, row)
+                return (acorn_x, acorn_y)
+
+
 def get_squirrel_loc(state):
-	map = state[0]
-	for row in range(map.shape[0]):
-		for col in range(map.shape[1]):
-			if map[row, col]==4:
-				(squirrel_x, squirrel_y) = (col, row)
-				return (squirrel_x, squirrel_y)
+    map = state[0]
+    for row in range(map.shape[0]):
+        for col in range(map.shape[1]):
+            if map[row, col] == 4:
+                (squirrel_x, squirrel_y) = (col, row)
+                return (squirrel_x, squirrel_y)
+
+
 '''
 def state_action_vec(state,action):
 	robot_x,robot_y = state[0]
@@ -44,17 +51,18 @@ def state_action_vec(state,action):
 	array[(action-1)*n:(action-1)*n+n] = vec
 	return array
 '''
-def state_action_vec(state,action):
-	robot_x, robot_y = state[1]
-	has_acorn = state[2]
-	state_action_vec = np.zeros(800)
-	state_action_vec[(action-1)*200+has_acorn*100+(robot_y-1)*10+(robot_x-1)] = 1
-	return state_action_vec
+
+
+def state_action_vec(state, action):
+    robot_x, robot_y = state[1]
+    has_acorn = state[2]
+    state_action_vec = np.zeros(800)
+    state_action_vec[(action - 1) * 200 + has_acorn * 100 + (robot_y - 1) * 10 + (robot_x - 1)] = 1
+    return state_action_vec
+
 
 def print_policy(net, state):
-	pass
-
-
+    pass
 
 
 '''
@@ -165,3 +173,32 @@ def state_action_vec(state, action):
 	return array
 
 '''
+
+
+class AcutallyUsefulPriorityQueue:
+    """
+	Min heap, returns values with smallest priority first
+	"""
+
+    def __init__(self, priority_fn=None):
+        self.data = []
+        self.count = 0
+        self.priority_fn = priority_fn
+
+    def add(self, item):
+        if self.priority_fn is not None:
+            prio = self.priority_fn(item)
+        else:
+            prio = item
+
+        heapq.heappush(self.data, (prio, self.count, item))
+        self.count += 1
+
+    def pop(self):
+        return heapq.heappop(self.data)[2]
+
+    def peek(self):
+        return self.data[0]
+
+    def isEmpty(self):
+        return len(self.data) <= 0
