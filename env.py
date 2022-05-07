@@ -72,6 +72,8 @@ class RoboTaxiEnv(gym.Env):
 
         self.optimal_no_acorn = None
         self.optimal_w_acorn = None
+        self.optimal_no_acorn_numeric = None
+        self.optimal_w_acorn_numeroc = None
 
     def step(self, action):
         timestep_reward = 0
@@ -405,12 +407,13 @@ class RoboTaxiEnv(gym.Env):
 
     def compute_optimal_solution(self):
         # No acorn
-        self.optimal_no_acorn = self._get_policy_grid(self.nut_rc)
+        self.optimal_no_acorn, self.optimal_no_acorn_numeric = self._get_policy_grid(self.nut_rc)
         # With Acorn
-        self.optimal_w_acorn = self._get_policy_grid(self.squirrel_rc)
+        self.optimal_w_acorn, self.optimal_w_acorn_numeric = self._get_policy_grid(self.squirrel_rc)
 
     def _get_policy_grid(self, goal_rc):
         policy = [["" for i in range(10)] for j in range(10)]
+        policy_numeric = np.zeros((10, 10))
         not_filled_in = set()
         for i in range(10):
             for j in range(10):
@@ -428,8 +431,9 @@ class RoboTaxiEnv(gym.Env):
                 diff = (n[0] - p[0], n[1] - p[1])
                 action = Direction2Int[Direction(diff)]
                 policy[loc2tuple(p)[0]][loc2tuple(p)[1]] = ('^', '>', 'v', '<')[action]
+                policy_numeric[loc2tuple(p)] = action
                 not_filled_in.discard(p)
-        return policy
+        return policy, policy_numeric
 
     def _bfs(self, start, end, map):
         """

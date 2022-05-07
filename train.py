@@ -1,9 +1,11 @@
 from collections import defaultdict
+from pathlib import Path
 
 import numpy as np
 import gym
 import json
 import matplotlib.pyplot as plt
+import pandas as pd
 from matplotlib.ticker import MultipleLocator
 
 from env import RoboTaxiEnv, CellType, loc2tuple
@@ -14,6 +16,7 @@ import time
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 import seaborn as sns
+import multiprocessing
 
 
 def Q(weights, state, action):
@@ -34,41 +37,44 @@ def H(weights, state, action):
     vec = state_action_vec(state, action)
     return np.dot(weights, vec)
 
+
 def visualize_H(h):
-    print("H")
-    print("No Acorn")
+    # print("H")
+    # print("No Acorn")
     H_mat_no_acorn = np.zeros((10, 10, 4))
     H_mat_acorn = np.zeros((10, 10, 4))
     for r in range(1, 11):
         for c in range(1, 11):
             for a in range(1, 5):
-                H_mat_no_acorn[r-1, c-1, a-1] = H(h, (None, (c, r), False), a)
+                H_mat_no_acorn[r - 1, c - 1, a - 1] = H(h, (None, (c, r), False), a)
 
-    print("With Acorn")
+    # print("With Acorn")
     for r in range(1, 11):
         for c in range(1, 11):
             for a in range(1, 5):
-                H_mat_acorn[r-1, c-1, a-1] = H(h, (None, (c, r), True), a)
+                H_mat_acorn[r - 1, c - 1, a - 1] = H(h, (None, (c, r), True), a)
 
     return H_mat_no_acorn, H_mat_acorn
 
+
 def visualize_Q(w):
-    print("Q")
-    print("No Acorn")
+    # print("Q")
+    # print("No Acorn")
     Q_mat_no_acorn = np.zeros((10, 10, 4))
     Q_mat_acorn = np.zeros((10, 10, 4))
     for r in range(1, 11):
         for c in range(1, 11):
             for a in range(1, 5):
-                Q_mat_no_acorn[r-1, c-1, a-1] = Q(w, (None, (c, r), False), a)
+                Q_mat_no_acorn[r - 1, c - 1, a - 1] = Q(w, (None, (c, r), False), a)
 
-    print("With Acorn")
+    # print("With Acorn")
     for r in range(1, 11):
         for c in range(1, 11):
             for a in range(1, 5):
-                Q_mat_acorn[r-1, c-1, a-1] = Q(w, (None, (c, r), True), a)
+                Q_mat_acorn[r - 1, c - 1, a - 1] = Q(w, (None, (c, r), True), a)
 
     return Q_mat_no_acorn, Q_mat_acorn
+
 
 def visualize_optimal_policy(env, writer):
     arrows = ('^', '>', 'v', '<')
@@ -96,7 +102,7 @@ def visualize_optimal_policy(env, writer):
     ax.yaxis.set_major_locator(MultipleLocator(1))
     ax.grid(visible=True, which='minor')
     writer.add_figure("Optimal Policy NO acorn", fig)
-    print("Optimal Policy NO acorn")
+    # print("Optimal Policy NO acorn")
 
     # WITH Acorn
     x_s = []
@@ -123,10 +129,10 @@ def visualize_optimal_policy(env, writer):
     writer.add_figure("Optimal Policy WITH acorn", fig)
     writer.add_figure("Optimal Policy WITH acorn", fig)
     writer.add_figure("Optimal Policy WITH acorn", fig)
-    print("Optimal Policy WITH acorn")
+    # print("Optimal Policy WITH acorn")
+
 
 def visualize_policy(w, writer, episode):
-
     Q_a = np.zeros(4)
     act2dir = [(0, 1), (1, 0), (0, -1), (-1, 0)]
 
@@ -137,8 +143,8 @@ def visualize_policy(w, writer, episode):
     y_direct = []
     for r in range(1, 11):
         for c in range(1, 11):
-            x_s.append(c-1)
-            y_s.append(r-1)
+            x_s.append(c - 1)
+            y_s.append(r - 1)
             for a in range(1, 5):
                 Q_a[a - 1] = Q(w, (None, (c, r), False), a)
             opt_act = Q_a.argmax()
@@ -161,8 +167,8 @@ def visualize_policy(w, writer, episode):
     y_direct = []
     for r in range(1, 11):
         for c in range(1, 11):
-            x_s.append(c-1)
-            y_s.append(r-1)
+            x_s.append(c - 1)
+            y_s.append(r - 1)
             for a in range(1, 5):
                 Q_a[a - 1] = Q(w, (None, (c, r), True), a)
             opt_act = Q_a.argmax()
@@ -184,12 +190,13 @@ def visualize_potential_field(env):
     pf_acorn = np.zeros((10, 10))
     for r in range(1, 11):
         for c in range(1, 11):
-            pf_no_acorn[r-1, c-1] = compute_potential_field(env, (None, (c, r), False))
-            pf_acorn[r-1, c-1] = compute_potential_field(env, (None, (c, r), True))
+            pf_no_acorn[r - 1, c - 1] = compute_potential_field(env, (None, (c, r), False))
+            pf_acorn[r - 1, c - 1] = compute_potential_field(env, (None, (c, r), True))
     return pf_no_acorn, pf_acorn
 
-def epsilon_greedy_action(weights, state, epsilon):
-    if (np.random.rand() < epsilon):
+
+def epsilon_greedy_action(weights, state, epsilon, ts, decay_param=1):
+    if np.random.rand() < decay_param ** ts:
         return np.random.randint(1, 5)
     else:
         Q_value = np.zeros(4)
@@ -200,14 +207,15 @@ def epsilon_greedy_action(weights, state, epsilon):
 
 
 def epsilon_greedy_action_with_H(weights, state, human_reward_weight, epsilon, ts, decay_param=1):
-    if (np.random.rand() < epsilon):
+    if (np.random.rand() < epsilon * decay_param ** ts):
         return np.random.randint(1, 5)
     else:
         Q_value = np.zeros(4)
         for action in range(1, 5):
-            Q_value[action - 1] = Q(weights, state, action) + decay_param**ts * H(human_reward_weight, state, action)
+            Q_value[action - 1] = Q(weights, state, action) + decay_param ** ts * H(human_reward_weight, state, action)
         best_action = np.random.choice(np.flatnonzero(Q_value == Q_value.max())) + 1
         return best_action
+
 
 def H_greedy_epsilon(human_reward_weight, state, epsilon):
     if (np.random.rand() < epsilon):
@@ -219,8 +227,9 @@ def H_greedy_epsilon(human_reward_weight, state, epsilon):
         best_action = np.random.choice(np.flatnonzero(H_value == H_value.max())) + 1
         return best_action
 
+
 def control_sharing(weights, state, human_reward_weight, p_human, ts, decay_param=1):
-    if (np.random.rand() < decay_param**ts * p_human):
+    if (np.random.rand() < decay_param ** ts * p_human):
         H_value = np.zeros(4)
         for action in range(1, 5):
             H_value[action - 1] = H(human_reward_weight, state, action)
@@ -236,7 +245,7 @@ def control_sharing(weights, state, human_reward_weight, p_human, ts, decay_para
 
 def select_action(weights, state, human_reward_weight, epsilon, method, ts, env, p_human=0.5, decay_param=1):
     if method == "e_greedy":
-        return epsilon_greedy_action(weights, state, epsilon)
+        return epsilon_greedy_action(weights, state, epsilon, ts=ts, decay_param=decay_param)
     elif method == "action_biasing":
         return epsilon_greedy_action_with_H(weights, state, human_reward_weight, epsilon, ts=ts, decay_param=decay_param)
     elif method == "control_sharing":
@@ -254,7 +263,9 @@ def select_action(weights, state, human_reward_weight, epsilon, method, ts, env,
         else:
             return arrows.index(env.optimal_w_acorn[player_rc[0]][player_rc[1]]) + 1
 
-sigmoid_fn = lambda x: 1 / (1 + np.exp(-x))
+
+def sigmoid_fn(x):
+    return 1 / (1 + np.exp(-x))
 
 
 def get_human_reward(env, old_obs, new_obs, action, simulated=True, soft_rewards=True, method="BFS"):
@@ -277,7 +288,7 @@ def get_human_reward(env, old_obs, new_obs, action, simulated=True, soft_rewards
 
             if soft_rewards:
                 # For Soft Rewards
-                h_r =  (sigmoid_fn(field_before - field_after) - 0.5)  # Scale to (-1, 1)
+                h_r = (sigmoid_fn(field_before - field_after) - 0.5)  # Scale to (-1, 1)
             else:
                 # For Hard Rewards
                 h_r = 1 if field_before > field_after else -1
@@ -317,7 +328,7 @@ def compute_potential_field(env, obs):
     DIV_EPS = 1e-3
 
     player_rc = loc2tuple(obs[1])
-    player_rc = (player_rc[0]-1, player_rc[1]-1)
+    player_rc = (player_rc[0] - 1, player_rc[1] - 1)
     has_acorn = obs[2]
 
     total_potential = 0
@@ -339,9 +350,34 @@ def compute_potential_field(env, obs):
     return total_potential
 
 
-def main(params):
+def compute_H_loss(env, h):
+    # Compute H_hat for every state, action pair
+    H_hat_no_acorn = np.zeros((10, 10, 4))
+    for r in range(1, 11):
+        for c in range(1, 11):
+            for a in range(1, 5):
+                H_hat_no_acorn[r - 1, c - 1, a - 1] = H(h, (None, (c, r), False), a)
+    H_hat_w_acorn = np.zeros((10, 10, 4))
+    for r in range(1, 11):
+        for c in range(1, 11):
+            for a in range(1, 5):
+                H_hat_w_acorn[r - 1, c - 1, a - 1] = H(h, (None, (c, r), True), a)
+
+    # Get matricies for actual human reward
+    H_no_acorn = 0.5 * ((np.arange(4) == env.optimal_no_acorn_numeric[..., None]).astype(int) - (np.arange(4) != env.optimal_no_acorn_numeric[..., None]).astype(int))  # One hot encode optimal policy arrays
+    H_w_acorn = 0.5 * ((np.arange(4) == env.optimal_w_acorn_numeric[..., None]).astype(int) - (np.arange(4) != env.optimal_w_acorn_numeric[..., None]).astype(int))  # One hot encode optimal policy arrays
+
+    # Compute Loss
+    no_acorn_loss = ((H_hat_no_acorn - H_no_acorn) ** 2).mean()
+    w_acorn_loss = ((H_hat_w_acorn - H_w_acorn) ** 2).mean()
+
+    return no_acorn_loss, w_acorn_loss, (no_acorn_loss + w_acorn_loss) / 2
+
+
+def main(params, run_name):
     # Logging Setup
-    writer = SummaryWriter()
+    Path(f"runs/{run_name}").mkdir(exist_ok=True, parents=True)
+    writer = SummaryWriter(log_dir=f'runs/{run_name}')
     writer.add_text("params", str(params))
 
     config = {}
@@ -352,17 +388,19 @@ def main(params):
     num_episodes = params.get('num_episodes', 10000)
     alpha = params.get('alpha', 0.01)
     alpha_h = params.get('alpha_h', 0.1)
-    gamma = params.get('gamma', 0.95) #0.7
+    gamma = params.get('gamma', 0.95)  # 0.7
     epsilons = params.get('epsilons', [0.1, 0.1, 0.05, 0.05])
     ACTION_SELECTION_METHOD = params.get('ACTION_SELECTION_METHOD', "control_sharing")
     P_HUMAN = params.get('P_HUMAN', 0.3)
     USE_SOFT_REWARDS = params.get('USE_SOFT_REWARDS', True)
     HUMAN_TRAINING_EPISODES = params.get('HUMAN_TRAINING_EPISODES', np.float('inf'))
     DECAY_PARAM = params.get('DECAY_PARAM', 1)
+    HUMAN_REWARD_SCALE = params.get('HUMAN_REWARD_SCALE', 0)  # 1
+    ENV_REWARD_SCALE = params.get('ENV_REWARD_SCALE', 1)  # 0.1
     simulated_human_rewards = True
     run_till_complete = False
 
-    MANUAL_RUN = True
+    MANUAL_RUN = False
     run_to_episode = -1
 
     writer.add_text("num_episodes", str(num_episodes))
@@ -374,6 +412,8 @@ def main(params):
     writer.add_text("P_HUMAN", str(P_HUMAN))
     writer.add_text("HUMAN_TRAINING_EPISODES", str(HUMAN_TRAINING_EPISODES))
     writer.add_text("DECAY_PARAM", str(DECAY_PARAM))
+    writer.add_text("HUMAN_REWARD_SCALE", str(HUMAN_REWARD_SCALE))
+    writer.add_text("ENV_REWARD_SCALE", str(ENV_REWARD_SCALE))
 
     w = np.zeros(800)
     h = np.zeros(800)
@@ -381,7 +421,7 @@ def main(params):
     delivered = 0
     died = 0
 
-    for episode in tqdm(range(num_episodes)):
+    for episode in (range(num_episodes)):
         if episode < num_episodes / 4:
             epsilon = epsilons[0]
         elif episode < num_episodes / 2:
@@ -430,7 +470,7 @@ def main(params):
                 h_pred = H(h, state, action)
                 h = h + alpha_h * (h_r - h_pred) * state_action_vec(state, action)
 
-            td_error = H(h, state, action) + gamma * Q_max_a(w, new_state) - Q(w, state, action) # reward
+            td_error = HUMAN_REWARD_SCALE * H(h, state, action) + ENV_REWARD_SCALE * reward + gamma * Q_max_a(w, new_state) - Q(w, state, action)
             w = w + alpha * td_error * state_action_vec(state, action)
 
             state = new_state
@@ -444,27 +484,30 @@ def main(params):
         writer.add_scalar('Train/td_error', np.array(td_error_hist).mean(), episode)
 
         # Eval Episode
-        done = False
-        state, info = env.reset()
-        eval_rew_hist = []
-        while not done:
-            action = select_action(w, state, h, epsilon=0, method='e_greedy', p_human=P_HUMAN, ts=0, env=env)  # Deterministic action selection
-            new_state, reward, done, info = env.step(action)
-            state = new_state
-            eval_rew_hist.append(reward)
-        writer.add_scalar('Eval/Episode_Reward', np.array(eval_rew_hist).sum(), episode)
-        writer.add_scalar('Eval/Episode_Len', len(eval_rew_hist), episode)
+        # done = False
+        # state, info = env.reset()
+        # eval_rew_hist = []
+        # while not done:
+        #     action = select_action(w, state, h, epsilon=0, method='e_greedy', p_human=P_HUMAN, ts=0, env=env)  # Deterministic action selection
+        #     new_state, reward, done, info = env.step(action)
+        #     state = new_state
+        #     eval_rew_hist.append(reward)
+        # writer.add_scalar('Eval/Episode_Reward', np.array(eval_rew_hist).sum(), episode)
+        # writer.add_scalar('Eval/Episode_Len', len(eval_rew_hist), episode)
 
+        # Compute Metrics
+        # h_loss_no_acorn, h_loss_acorn, h_loss_avg = compute_H_loss(env, h)
+        # writer.add_scalar('H/h_loss_no_acorn', h_loss_no_acorn, episode)
+        # writer.add_scalar('H/h_loss_acorn', h_loss_acorn, episode)
+        # writer.add_scalar('H/h_loss_overall', h_loss_avg, episode)
 
         if episode % 100 == 0:
-            print("trained episode {}".format(episode))
+            # print("trained episode {}".format(episode))
             # Visualize Policy
             visualize_policy(w, writer, episode)
 
-    plt.plot(R)
-    plt.show()
-    print('times deliverd:', delivered)
-    print('times died:', died)
+    # print('times deliverd:', delivered)
+    # print('times died:', died)
 
     # Visualize H
     action_labels = ["UP", "RIGHT", "DOWN", "LEFT"]
@@ -503,38 +546,24 @@ def main(params):
     visualize_policy(w, writer, episode)
     visualize_optimal_policy(env, writer)
 
+    return R
+
+
+def run_trial(param):
+    name = param.get('name', "default")
+    total_runs = param.get('times', 1)
+    runs_left = total_runs
+
+    batch_data = []
+    while runs_left > 0:
+        print(f"{name} - Runs Left: {runs_left} / {param.get('times', 1)}")
+        R_hist = main(param, f"{name}{total_runs-runs_left}")
+        batch_data.append(R_hist)
+        runs_left -= 1
+
+    df = pd.DataFrame(batch_data)  # Each row is a run, each col is episode number
+    df.to_csv(f'outputs/{name}.csv')
+
 
 if __name__ == '__main__':
-
-    params_to_try = [
-        # {'ACTION_SELECTION_METHOD': 'optimal_policy', 'USE_SOFT_REWARDS': True,'epsilons': [0.3, 0.2, 0.1, 0.05], 'num_episodes': 1000},
-        {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [0.3, 0.2, 0.1, 0.05], 'num_episodes': 1000},
-        # {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [0.3, 0.2, 0.1, 0.05], 'num_episodes': 5000},
-
-        # {'ACTION_SELECTION_METHOD': 'action_biasing', 'USE_SOFT_REWARDS': True},
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 0.5, 'USE_SOFT_REWARDS': True},
-        # {'ACTION_SELECTION_METHOD': 'e_greedy', 'USE_SOFT_REWARDS': False, 'epsilons': [0.3, 0.2, 0.1, 0.05]},
-        # {'ACTION_SELECTION_METHOD': 'action_biasing', 'USE_SOFT_REWARDS': False},
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 0.5, 'USE_SOFT_REWARDS': False},
-
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 0.999, 'USE_SOFT_REWARDS': True},
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 0.999, 'USE_SOFT_REWARDS': False},
-
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 0.9977, 'num_episodes': 5000, 'alpha_h':1.0},
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 0.5, 'DECAY_PARAM': 0.9977, 'num_episodes': 5000, 'alpha_h': 1.0},
-
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 0.99, 'USE_SOFT_REWARDS': False},
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 0.9, 'USE_SOFT_REWARDS': True},
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 0.9, 'USE_SOFT_REWARDS': False},
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': True},
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': False},
-
-        # {'ACTION_SELECTION_METHOD': 'h_greedy', 'USE_SOFT_REWARDS': True, 'epsilons': [1.0, 0.5, 0.1, 0.05]},
-        # {'ACTION_SELECTION_METHOD': 'h_greedy', 'USE_SOFT_REWARDS': False, 'epsilons': [1.0, 0.5, 0.1, 0.05]},
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': True},
-        # {'ACTION_SELECTION_METHOD': 'control_sharing', 'P_HUMAN': 1.0, 'DECAY_PARAM': 1, 'USE_SOFT_REWARDS': False},
-    ]
-
-    for param in params_to_try:
-        print(param)
-        main(param)
+    multiprocessing.freeze_support()
