@@ -1,22 +1,19 @@
-from collections import defaultdict
+import json
+import multiprocessing
+import random
+import string
+import time
 from pathlib import Path
 
-import numpy as np
-import gym
-import json
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
-from matplotlib.ticker import MultipleLocator
-
-from env import RoboTaxiEnv, CellType, loc2tuple
-from util import state_action_vec, get_acorn_loc, get_squirrel_loc, get_bomb_loc
-from Net import QFunction
-import time
-
-from torch.utils.tensorboard import SummaryWriter
-from tqdm import tqdm
 import seaborn as sns
-import multiprocessing
+from matplotlib.ticker import MultipleLocator
+from torch.utils.tensorboard import SummaryWriter
+
+from env import RoboTaxiEnv, loc2tuple
+from util import state_action_vec
 
 
 def Q(weights, state, action):
@@ -268,7 +265,7 @@ def sigmoid_fn(x):
     return 1 / (1 + np.exp(-x))
 
 
-def get_human_reward(env, old_obs, new_obs, action, simulated=True, soft_rewards=True, method="BFS"):
+def get_human_reward(env, old_obs, new_obs, action, simulated=True, soft_rewards=True, method="BFS", P_HUMAN_ERROR=0):
     if not simulated:
         run_till_complete = False
         env.render()
@@ -311,6 +308,9 @@ def get_human_reward(env, old_obs, new_obs, action, simulated=True, soft_rewards
                     h_r = 0.5
                 else:
                     h_r = -0.5
+
+            if np.random.rand() < P_HUMAN_ERROR:
+                h_r = -h_r
 
         run_till_complete = False
 
@@ -375,8 +375,14 @@ def compute_H_loss(env, h):
 
 
 def main(params, run_name):
+    outdir = params['outdir']
     # Logging Setup
-    Path(f"runs/{run_name}").mkdir(exist_ok=True, parents=True)
+    try:
+        Path(f"runs/{outdir}/{run_name}").mkdir(exist_ok=True, parents=True)
+    except Exception as e:
+        print(e)
+        letters = string.ascii_lowercase
+        run_name = ''.join(random.choice(letters) for i in range(20))
     writer = SummaryWriter(log_dir=f'runs/{run_name}')
     writer.add_text("params", str(params))
 
@@ -397,6 +403,7 @@ def main(params, run_name):
     DECAY_PARAM = params.get('DECAY_PARAM', 1)
     HUMAN_REWARD_SCALE = params.get('HUMAN_REWARD_SCALE', 0)  # 1
     ENV_REWARD_SCALE = params.get('ENV_REWARD_SCALE', 1)  # 0.1
+    P_HUMAN_ERROR = params.get('P_HUMAN_ERROR', 0)
     simulated_human_rewards = True
     run_till_complete = False
 
@@ -414,6 +421,7 @@ def main(params, run_name):
     writer.add_text("DECAY_PARAM", str(DECAY_PARAM))
     writer.add_text("HUMAN_REWARD_SCALE", str(HUMAN_REWARD_SCALE))
     writer.add_text("ENV_REWARD_SCALE", str(ENV_REWARD_SCALE))
+    writer.add_text("P_HUMAN_ERROR", str(P_HUMAN_ERROR))
 
     w = np.zeros(800)
     h = np.zeros(800)
@@ -457,7 +465,7 @@ def main(params, run_name):
                     run_to_episode = episode + int(c)
 
             if not (run_till_complete or episode > HUMAN_TRAINING_EPISODES):
-                h_r, run_till_complete = get_human_reward(env, state, new_state, action=action, simulated=True, soft_rewards=USE_SOFT_REWARDS, method="BFS")
+                h_r, run_till_complete = get_human_reward(env, state, new_state, action=action, simulated=True, soft_rewards=USE_SOFT_REWARDS, method="BFS", P_HUMAN_ERROR=P_HUMAN_ERROR)
             else:
                 h_r = None
 
@@ -550,19 +558,22 @@ def main(params, run_name):
 
 
 def run_trial(param):
+    time.sleep(random.randint(1, 2000)/1000)
+
     name = param.get('name', "default")
     total_runs = param.get('times', 1)
+    outdir = param['outdir']
     runs_left = total_runs
 
     batch_data = []
     while runs_left > 0:
-        print(f"{name} - Runs Left: {runs_left} / {param.get('times', 1)}")
+        print(f"{outdir}/{name} - Runs Left: {runs_left} / {param.get('times', 1)}")
         R_hist = main(param, f"{name}{total_runs-runs_left}")
         batch_data.append(R_hist)
         runs_left -= 1
 
     df = pd.DataFrame(batch_data)  # Each row is a run, each col is episode number
-    df.to_csv(f'outputs/{name}.csv')
+    df.to_csv(f'outputs/{outdir}/{name}.csv')
 
 
 if __name__ == '__main__':
